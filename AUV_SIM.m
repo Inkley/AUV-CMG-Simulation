@@ -123,7 +123,7 @@ manpath = '/Users/Tyler/Desktop/RESEARCH/4 Dissertation/Manuscripts/CMG/Working 
     end
 
 %% GYROSCOPE STATES
-jj = 0;                                 % SELECT GYROSCOPE PARAMATERS
+jj = 2;                                 % SELECT GYROSCOPE PARAMATERS
 
     if      jj == 0              
         state.alpha = 0;                % CMG deflection angle, rad (about zg)
@@ -475,17 +475,15 @@ state_cell = {'x','y','z','\phi','\theta','\psi','u','v','w','p','q','r','\alpha
         strNameMAN = append(manpathcase,resultcase);
         print(gcf,'-depsc',strNameMAN) 
         
-%% FLYWHEEL PROPERTIES
-% Need to run STATE SPACE, GYROSCOPE STATES, STATE VECTOR, and INPUTS first
-% Otherwise just run entire code
-
+%% CMG PROPERTIES
 % Define the range of radius and thickness
 radii       = linspace(0.0508, 0.0762, 100);     % 2 inches to 3 inches (in meters)
 thicknesses = linspace(0.00635, 0.0508, 100);    % 1/4 inch to 2 inches (in meters)
 
-% Preallocate matrices to store max Δɑ and ΔΩ
+% Preallocate matrices to store max Δɑ, ΔΩ, and energy input
 max_delta_alpha = zeros(length(radii), length(thicknesses));
 max_delta_omega = zeros(length(radii), length(thicknesses));
+energy_input_matrix = zeros(length(thicknesses), length(radii));
 
 % Loop over the range of radii and thicknesses
 for i = 1:length(radii)
@@ -509,28 +507,49 @@ for i = 1:length(radii)
         delta_omega = diff(Y_OUT(:, 14));  % Angular velocity changes
         
         % Store the max values in the matrices
-        max_delta_alpha(i, j) = max(abs(delta_alpha));  % Store max change in alpha
-        max_delta_omega(i, j) = max(abs(delta_omega));  % Store max change in Omega
+        max_delta_alpha(i, j) = max(abs(delta_alpha));  % Max change in alpha
+        max_delta_omega(i, j) = max(abs(delta_omega));  % Max change in Omega
+        
+        % Extract necessary parameters for energy input calculation
+        Omega = Y_OUT(1:end-1, 14);                     % Angular velocity
+        alpha_dot = diff(Y_OUT(:, 13)) ./ diff(T_OUT);  % Deflection velocity
+        
+        % Compute instantaneous powers
+        P1 = Omega .* tau_cmg.K;        % Power from gyroscope angular velocity
+        P2 = alpha_dot .* tau_cmg.M;    % Power from deflection velocity
+        
+        % Integrate the absolute power to calculate the total energy input
+        E_in = trapz(T_OUT(1:end-1), abs(P1)) + trapz(T_OUT(1:end-1), abs(P2));
+        
+        % Store the energy input in the matrix
+        energy_input_matrix(j, i) = E_in;
     end
 end
 
-% Create contour plots for Δɑ and ΔΩ
+% Contour plot for maximum deflection angle change (Δɑ)
 figure
 contourf(radii, thicknesses, max_delta_alpha)
 xlabel('Gyroscope Radius (m)')
 ylabel('Gyroscope Thickness (m)')
-title('Maximum Δɑ (Change in Deflection Angle)')
+title('Maximum Δɑ (°)')
 colorbar
 set(gca,'FontSize',16,'LineWidth',1.0)
 
-% Define logarithmic levels for contour plot
-log_levels = logspace(log10(min(max_delta_omega(:))), log10(max(max_delta_omega(:))), 20);
-
-% Create the contour plot with logarithmic color levels
+% Contour plot for maximum angular velocity change (ΔΩ)
 figure
+log_levels = logspace(log10(min(max_delta_omega(:))), log10(max(max_delta_omega(:))), 20); % Logarithmic levels
 contourf(radii, thicknesses, max_delta_omega, log_levels)
 xlabel('Gyroscope Radius (m)')
 ylabel('Gyroscope Thickness (m)')
-title('Maximum ΔΩ (Change in Angular Velocity)')
+title('Maximum ΔΩ (rad/s)')
 colorbar
 set(gca,'FontSize',16,'LineWidth',1.0)
+
+% Contour plot for energy input
+figure
+contourf(radii, thicknesses, energy_input_matrix, 20) % The '20' specifies the number of contour levels
+xlabel('Gyroscope Radius (m)')
+ylabel('Gyroscope Thickness (m)')
+title('CMG Energy Input (J)')
+colorbar
+set(gca, 'FontSize', 16, 'LineWidth', 1.0)
